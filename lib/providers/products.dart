@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'product.dart';
 
 class Products with ChangeNotifier {
@@ -64,21 +66,72 @@ class Products with ChangeNotifier {
   //   notifyListeners();
   // }
 
-  void addProduct(Product product) {
-    final newProduct = Product(
-        title: product.title,
-        description: product.description,
-        price: product.price,
-        imageUrl: product.imageUrl,
-        id: DateTime.now().toString());
+  Future<void> fetchAndSetProducts() async {
+    final url = 'https://fshop-ec974-default-rtdb.firebaseio.com/products.json';
 
-    _items.add(newProduct);
-    notifyListeners();
+    try {
+      final response = await http.get(Uri.parse(url));
+      final extractedData = json.decode(response.body) as Map<String, dynamic>;
+      final List<Product> loadedProducts = [];
+      extractedData.forEach((prodId, proData) {
+        loadedProducts.add(Product(
+            id: prodId,
+            title: proData['title'],
+            description: proData['description'],
+            price: proData['price'],
+            isFavorite: proData['isFavorite'],
+            imageUrl: proData['imageUrl']));
+      });
+
+      _items = loadedProducts;
+      notifyListeners();
+    } catch (error) {
+      throw (error);
+    }
   }
 
-  void updateProduct(String id, Product newProduct) {
+  Future<void> addProduct(Product product) async {
+    final url = 'https://fshop-ec974-default-rtdb.firebaseio.com/products.json';
+
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        body: json.encode({
+          'title': product.title,
+          'description': product.description,
+          'price': product.price,
+          'imageUrl': product.imageUrl,
+          'isFavorite': product.isFavorite,
+        }),
+      );
+
+      final newProduct = Product(
+          title: product.title,
+          description: product.description,
+          price: product.price,
+          imageUrl: product.imageUrl,
+          id: json.decode(response.body)['name']);
+
+      _items.add(newProduct);
+      notifyListeners();
+    } catch (error) {
+      print(error);
+      throw error;
+    }
+  }
+
+  Future<void> updateProduct(String id, Product newProduct) async {
     final prodIndex = _items.indexWhere((prod) => prod.id == id);
     if (prodIndex >= 0) {
+      final url =
+          'https://fshop-ec974-default-rtdb.firebaseio.com/products/$id.json';
+      await http.patch(Uri.parse(url),
+          body: json.encode({
+            'title': newProduct.title,
+            'description': newProduct.description,
+            'price': newProduct.price,
+            'imageUrl': newProduct.imageUrl,
+          }));
       _items[prodIndex] = newProduct;
       notifyListeners();
     } else {
@@ -87,7 +140,17 @@ class Products with ChangeNotifier {
   }
 
   void deleteProduct(String id) {
+    final url =
+        'https://fshop-ec974-default-rtdb.firebaseio.com/products/$id.json';
+    final existingProductIndex = _items.indexWhere((prod) => prod.id == id);
+    Product? exsitingProduct = _items[existingProductIndex];
     _items.removeWhere((prod) => prod.id == id);
     notifyListeners();
+
+    http.delete(Uri.parse(url)).then((_) {
+      exsitingProduct = null;
+    }).catchError((_) {
+      _items.insert(existingProductIndex, exsitingProduct!);
+    });
   }
 }
